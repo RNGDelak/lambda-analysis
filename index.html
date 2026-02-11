@@ -160,9 +160,10 @@ function run() {
   let history = [];
   let step = 0;
 
-  while (true) {
+  function stepReduce() {
     let s = toString(term);
     out.textContent += `Step ${step}: ${s}\n`;
+    out.scrollTop = out.scrollHeight;
 
     history.push(s);
     if (history.length >= 3) {
@@ -181,8 +182,14 @@ function run() {
 
     term = next;
     step++;
+
+    // ⬇️ Yield to browser before next step
+    setTimeout(stepReduce, 0);
   }
+
+  stepReduce();
 }
+
 </script>
 
 
