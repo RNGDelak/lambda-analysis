@@ -1,11 +1,13 @@
 <!DOCTYPE html>
-<html lang="en"><head>
+<html lang="en">
+<head>
   <meta charset="UTF-8">
   <title>Lambda Calculus Computation Analysis</title>
   <style>
     body { font-family: monospace; padding: 20px; background: #fafafa; }
     textarea { width: 100%; height: 140px; }
     button { margin-top: 10px; padding: 6px 12px; }
+    input[type="number"] { width: 60px; }
     pre { background: #eee; padding: 10px; white-space: pre-wrap; }
   </style>
 </head>
@@ -14,21 +16,25 @@
 <h2>Lambda Calculus Computation Analysis</h2>
 <p>
   if you write <code>(λn.λf.λx.f(nf(x)))</code> then <code>nf</code> will be considered as a single varible! <br>
-please leave a space between 2 varible if you consider they are seperated varibles! <br>
-click <a href="https://cruzgodar.com/applets/lambda-calculus" target="_blank">here</a> for better version (not mine) but slower <br>
-thanks <a href="https://www.youtube.com/@twoswap" target="_blank">2swap</a> for his inspirative video <a href="https://www.youtube.com/watch?v=RcVA8Nj6HEo" target="_blank">What is PLUS times PLUS?</a>
+  please leave a space between 2 varible if you consider they are seperated varibles! <br>
+  click <a href="https://cruzgodar.com/applets/lambda-calculus" target="_blank">here</a> for better version (not mine) but slower <br>
+  thanks <a href="https://www.youtube.com/@twoswap" target="_blank">2swap</a> for his inspirative video
+  <a href="https://www.youtube.com/watch?v=RcVA8Nj6HEo" target="_blank">What is PLUS times PLUS?</a>
 </p>
 
 <textarea id="input">(λn. λf. λx. f (n f x)) (λf. λx. f (f (f x)))</textarea>
+
+<br><br>
+<label>
+  Show
+  <input id="recentSteps" type="number" value="10" min="1">
+  recent steps
+</label>
+<br>
 <button onclick="run()">Reduce</button>
 
 <h3>Steps</h3>
-<pre id="output">Step 0: (λn. λf. λx. (f ((n f) x)) λf. λx. (f (f (f x))))
-Step 1: λf. λx. (f ((λf. λx. (f (f (f x))) f) x))
-Step 2: λf. λx. (f (λx. (f (f (f x))) x))
-Step 3: λf. λx. (f (f (f (f x))))
-
-Irreducible (Normal Form)</pre>
+<pre id="output"></pre>
 
 <script>
 // ===================== AST =====================
@@ -37,9 +43,10 @@ function Abs(param, body) { return { type: 'abs', param, body }; }
 function App(left, right) { return { type: 'app', left, right }; }
 
 // ===================== Tokenizer =====================
-// Supports both \\ and λ for abstraction
 function tokenize(src) {
-  return src.replace(/λ/g, '\\').match(/\\|\.|\(|\)|[a-zA-Z_][a-zA-Z0-9_]*/g) || [];(/\\|\.|\(|\)|[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
+  return src
+    .replace(/λ/g, '\\')
+    .match(/\\|\.|\(|\)|[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
 }
 
 // ===================== Parser =====================
@@ -122,6 +129,7 @@ function substitute(t, v, r) {
   }
 }
 
+// ===================== Pretty Printer =====================
 function toString(t) {
   if (t.type === 'var') return t.name;
   if (t.type === 'abs') return `λ${t.param}. ${toString(t.body)}`;
@@ -154,6 +162,11 @@ function run() {
   const out = document.getElementById('output');
   out.textContent = '';
 
+  const maxRecent = Math.max(
+    1,
+    parseInt(document.getElementById('recentSteps').value || 10)
+  );
+
   let tokens = tokenize(document.getElementById('input').value);
   let term = parse(tokens);
 
@@ -161,37 +174,38 @@ function run() {
   let step = 0;
 
   function stepReduce() {
-    let s = toString(term);
-    out.textContent += `Step ${step}: ${s}\n`;
+    const s = toString(term);
+    history.push(`Step ${step}: ${s}`);
+
+    if (history.length > maxRecent) {
+      history = history.slice(-maxRecent);
+    }
+
+    out.textContent = history.join('\n');
     out.scrollTop = out.scrollHeight;
 
-    history.push(s);
     if (history.length >= 3) {
       let n = history.length;
       if (history[n - 1] === history[n - 3]) {
-        out.textContent += '\nNon-termination detected → Ω (omega)';
+        out.textContent += '\n\nNon-termination detected → Ω (omega)';
         return;
       }
     }
 
     let next = reduceOnce(term);
     if (!next) {
-      out.textContent += '\nIrreducible (Normal Form)';
+      out.textContent += '\n\nIrreducible (Normal Form)';
       return;
     }
 
     term = next;
     step++;
-
-    // ⬇️ Yield to browser before next step
     setTimeout(stepReduce, 0);
   }
 
   stepReduce();
 }
-
 </script>
 
-
-
-</body></html>
+</body>
+</html>
