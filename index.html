@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="UTF-8">
+  <title>Lambda Calculus Computation Analysis</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #fafafa; }
+    textarea { width: 100%; height: 140px; }
+    button { margin-top: 10px; padding: 6px 12px; }
+    pre { background: #eee; padding: 10px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+<h2>Lambda Calculus Computation Analysis</h2>
+<p>
+  if you write <code>(λn.λf.λx.f(nf(x)))</code> then <code>nf</code> will be considered as a single varible! <br>
+please leave a space between 2 varible if you consider they are seperated varibles! <br>
+click <a href="https://cruzgodar.com/applets/lambda-calculus" target="_blank">here</a> for better version (not mine) but slower <br>
+thanks <a href="https://www.youtube.com/@twoswap" target="_blank">2swap</a> for his inspirative video <a href="https://www.youtube.com/watch?v=RcVA8Nj6HEo" target="_blank">What is PLUS times PLUS?</a>
+</p>
+
+<textarea id="input">(λn. λf. λx. f (n f x)) (λf. λx. f (f (f x)))</textarea>
+<button onclick="run()">Reduce</button>
+
+<h3>Steps</h3>
+<pre id="output">Step 0: (λn. λf. λx. (f ((n f) x)) λf. λx. (f (f (f x))))
+Step 1: λf. λx. (f ((λf. λx. (f (f (f x))) f) x))
+Step 2: λf. λx. (f (λx. (f (f (f x))) x))
+Step 3: λf. λx. (f (f (f (f x))))
+
+Irreducible (Normal Form)</pre>
+
+<script>
+// ===================== AST =====================
+function Var(name) { return { type: 'var', name }; }
+function Abs(param, body) { return { type: 'abs', param, body }; }
+function App(left, right) { return { type: 'app', left, right }; }
+
+// ===================== Tokenizer =====================
+// Supports both \\ and λ for abstraction
+function tokenize(src) {
+  return src.replace(/λ/g, '\\').match(/\\|\.|\(|\)|[a-zA-Z_][a-zA-Z0-9_]*/g) || [];(/\\|\.|\(|\)|[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
+}
+
+// ===================== Parser =====================
+function parse(tokens) {
+  let i = 0;
+
+  function parseExpr() {
+    let term = parseAtom();
+    while (i < tokens.length && tokens[i] !== ')' && tokens[i] !== '.') {
+      term = App(term, parseAtom());
+    }
+    return term;
+  }
+
+  function parseAtom() {
+    let t = tokens[i++];
+
+    if (t === '(') {
+      let e = parseExpr();
+      i++; // ')'
+      return e;
+    }
+
+    if (t === '\\') {
+      let param = tokens[i++];
+      i++; // '.'
+      let body = parseExpr();
+      return Abs(param, body);
+    }
+
+    return Var(t);
+  }
+
+  return parseExpr();
+}
+
+// ===================== Utilities =====================
+function clone(t) { return JSON.parse(JSON.stringify(t)); }
+
+function freeVars(t, set = new Set()) {
+  if (t.type === 'var') set.add(t.name);
+  if (t.type === 'app') {
+    freeVars(t.left, set);
+    freeVars(t.right, set);
+  }
+  if (t.type === 'abs') {
+    let inner = freeVars(t.body, new Set());
+    inner.delete(t.param);
+    inner.forEach(v => set.add(v));
+  }
+  return set;
+}
+
+function freshName(base, avoid) {
+  let i = 0;
+  let name = base;
+  while (avoid.has(name)) name = base + (++i);
+  return name;
+}
+
+function substitute(t, v, r) {
+  if (t.type === 'var') return t.name === v ? clone(r) : t;
+
+  if (t.type === 'app')
+    return App(substitute(t.left, v, r), substitute(t.right, v, r));
+
+  if (t.type === 'abs') {
+    if (t.param === v) return t;
+
+    let fv = freeVars(r);
+    if (fv.has(t.param)) {
+      let avoid = freeVars(t.body);
+      fv.forEach(x => avoid.add(x));
+      let fresh = freshName(t.param, avoid);
+      let renamed = substitute(t.body, t.param, Var(fresh));
+      return Abs(fresh, substitute(renamed, v, r));
+    }
+
+    return Abs(t.param, substitute(t.body, v, r));
+  }
+}
+
+function toString(t) {
+  if (t.type === 'var') return t.name;
+  if (t.type === 'abs') return `λ${t.param}. ${toString(t.body)}`;
+  if (t.type === 'app') return `(${toString(t.left)} ${toString(t.right)})`;
+}
+
+// ===================== Normal-order Reduction =====================
+function reduceOnce(t) {
+  if (t.type === 'app' && t.left.type === 'abs') {
+    return substitute(t.left.body, t.left.param, t.right);
+  }
+
+  if (t.type === 'app') {
+    let l = reduceOnce(t.left);
+    if (l) return App(l, t.right);
+    let r = reduceOnce(t.right);
+    if (r) return App(t.left, r);
+  }
+
+  if (t.type === 'abs') {
+    let b = reduceOnce(t.body);
+    if (b) return Abs(t.param, b);
+  }
+
+  return null;
+}
+
+// ===================== Runner =====================
+function run() {
+  const out = document.getElementById('output');
+  out.textContent = '';
+
+  let tokens = tokenize(document.getElementById('input').value);
+  let term = parse(tokens);
+
+  let history = [];
+  let step = 0;
+
+  while (true) {
+    let s = toString(term);
+    out.textContent += `Step ${step}: ${s}\n`;
+
+    history.push(s);
+    if (history.length >= 3) {
+      let n = history.length;
+      if (history[n - 1] === history[n - 3]) {
+        out.textContent += '\nNon-termination detected → Ω (omega)';
+        return;
+      }
+    }
+
+    let next = reduceOnce(term);
+    if (!next) {
+      out.textContent += '\nIrreducible (Normal Form)';
+      return;
+    }
+
+    term = next;
+    step++;
+  }
+}
+</script>
+
+
+
+</body></html>
